@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.venv/
+.env
+deploy/studionet_deploy.json
+deploy/bradbury_deploy.json
+.pytest_cache/
+artifacts/
+*.egg-info/
