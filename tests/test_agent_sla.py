@@ -527,3 +527,84 @@ class TestEdgeCases:
 
         final_stats = json.loads(contract.get_platform_stats())
         assert int(final_stats["total_resolved"]) == 1
+
+
+# ============ BALANCES / WITHDRAW ============
+
+class TestBalances:
+    def test_payout_credited_to_agent(self, direct_vm, direct_deploy, direct_alice, direct_bob):
+        contract = direct_deploy("contracts/agent_sla.py")
+        register_agent(contract, direct_vm, direct_bob)
+        task_key = create_task(contract, direct_vm, direct_alice, stake=10**18)
+        direct_vm.sender = direct_bob
+        contract.accept_task(task_key)
+        contract.submit_evidence(task_key, json.dumps(["https://example.com"]), "Done")
+
+        eval_json = json.dumps({
+            "quality_score": 95, "completeness_score": 100, "deadline_met": True,
+            "deliverables_found": 3, "deliverables_required": 3,
+            "overall_verdict": "excellent", "payout_percentage": 100,
+            "issues": [], "strengths": [], "reasoning": "Perfect",
+        })
+        direct_vm.sender = direct_alice
+        contract.resolve_task(task_key, eval_json)
+
+        agent_key = addr_str(direct_bob)
+        client_key = addr_str(direct_alice)
+        assert int(contract.get_balance(agent_key)) > 0
+        assert int(contract.get_balance(client_key)) == 0  # full payout, no refund
+
+    def test_partial_verdict_refunds_client(self, direct_vm, direct_deploy, direct_alice, direct_bob):
+        contract = direct_deploy("contracts/agent_sla.py")
+        register_agent(contract, direct_vm, direct_bob)
+        task_key = create_task(contract, direct_vm, direct_alice, stake=10**18)
+        direct_vm.sender = direct_bob
+        contract.accept_task(task_key)
+        contract.submit_evidence(task_key, json.dumps(["https://example.com"]), "Partial")
+
+        eval_json = json.dumps({
+            "quality_score": 50, "completeness_score": 50, "deadline_met": True,
+            "deliverables_found": 1, "deliverables_required": 3,
+            "overall_verdict": "partial", "payout_percentage": 50,
+            "issues": [], "strengths": [], "reasoning": "Partial",
+        })
+        direct_vm.sender = direct_alice
+        contract.resolve_task(task_key, eval_json)
+
+        agent_key = addr_str(direct_bob)
+        client_key = addr_str(direct_alice)
+        # payout 50% of (stake - fee), refund the rest
+        assert int(contract.get_balance(agent_key)) > 0
+        assert int(contract.get_balance(client_key)) > 0
+
+    def test_withdraw_success(self, direct_vm, direct_deploy, direct_alice, direct_bob):
+        contract = direct_deploy("contracts/agent_sla.py")
+        register_agent(contract, direct_vm, direct_bob)
+        task_key = create_task(contract, direct_vm, direct_alice, stake=10**18)
+        direct_vm.sender = direct_bob
+        contract.accept_task(task_key)
+        contract.submit_evidence(task_key, json.dumps(["https://example.com"]), "Done")
+
+        eval_json = json.dumps({
+            "quality_score": 95, "completeness_score": 100, "deadline_met": True,
+            "deliverables_found": 3, "deliverables_required": 3,
+            "overall_verdict": "excellent", "payout_percentage": 100,
+            "issues": [], "strengths": [], "reasoning": "Perfect",
+        })
+        direct_vm.sender = direct_alice
+        contract.resolve_task(task_key, eval_json)
+
+        agent_key = addr_str(direct_bob)
+        before = int(contract.get_balance(agent_key))
+        assert before > 0
+        direct_vm.sender = direct_bob
+        result = json.loads(contract.withdraw())
+        assert result["status"] == "withdrawn"
+        assert int(result["amount"]) == before
+        assert int(contract.get_balance(agent_key)) == 0
+
+    def test_withdraw_nothing(self, direct_vm, direct_deploy, direct_alice):
+        contract = direct_deploy("contracts/agent_sla.py")
+        result = json.loads(contract.withdraw())
+        assert "error" in result
+

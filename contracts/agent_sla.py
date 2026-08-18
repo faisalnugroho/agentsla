@@ -24,6 +24,7 @@ class AgentSLA(gl.Contract):
     disputes: TreeMap[str, str]
     reputation: TreeMap[str, str]
     agent_stats: TreeMap[str, str]
+    balances: TreeMap[str, str]
     next_task_id: u256
     next_dispute_id: u256
 
@@ -39,6 +40,7 @@ class AgentSLA(gl.Contract):
         self.disputes = TreeMap()
         self.reputation = TreeMap()
         self.agent_stats = TreeMap()
+        self.balances = TreeMap()
         self.next_task_id = u256(1)
         self.next_dispute_id = u256(1)
 
@@ -218,6 +220,7 @@ Return ONLY valid JSON:
         evaluation = json.loads(evaluation_json)
         stake = int(task_data["stake"])
         agent_key = task_data["agent"]
+        client_key = task_data["client"]
         verdict = evaluation["overall_verdict"]
         payout_pct = evaluation["payout_percentage"]
         platform_fee = stake * int(self.platform_fee_bps) // 10000
@@ -230,12 +233,16 @@ Return ONLY valid JSON:
             payout = available * payout_pct // 100; rep_change = 0
         else:
             payout = available * 30 // 100; rep_change = -100
-        penalty = available - payout
+        client_refund = available - payout
         task_data["status"] = "resolved"
         task_data["evaluation_result"] = evaluation_json
         task_data["payout_amount"] = str(payout)
-        task_data["penalty_amount"] = str(penalty)
+        task_data["penalty_amount"] = str(client_refund)
         self.tasks[task_key] = json.dumps(task_data)
+        # Credit payout to agent, refund residual to client, fee to platform
+        self._credit(agent_key, payout)
+        self._credit(client_key, client_refund)
+        self._credit(str(self.owner), platform_fee)
         current_rep = int(self.reputation[agent_key])
         new_rep = max(0, min(1000, current_rep + rep_change))
         self.reputation[agent_key] = str(new_rep)
@@ -249,9 +256,23 @@ Return ONLY valid JSON:
         self.platform_balance = u256(int(self.platform_balance) + platform_fee)
         return json.dumps({
             "status": "resolved", "verdict": verdict, "payout": str(payout),
-            "penalty": str(penalty), "platform_fee": str(platform_fee),
+            "penalty": str(client_refund), "platform_fee": str(platform_fee),
             "new_reputation": str(new_rep), "reputation_change": str(rep_change),
         })
+
+    def _credit(self, addr: str, amount: int) -> None:
+        current = int(self.balances[addr]) if addr in self.balances else 0
+        self.balances[addr] = str(current + amount)
+
+    @gl.public.write
+    def withdraw(self) -> str:
+        addr = str(gl.message.sender_address)
+        if addr not in self.balances or int(self.balances[addr]) <= 0:
+            return json.dumps({"error": "Nothing to withdraw"})
+        amount = int(self.balances[addr])
+        self.balances[addr] = "0"
+        return json.dumps({"status": "withdrawn", "amount": str(amount)})
+
 
     @gl.public.write.payable
     def raise_dispute(self, task_key: str, reason: str, evidence_urls: str) -> str:
@@ -339,6 +360,10 @@ Return ONLY valid JSON:
         if task_key not in self.tasks:
             return json.dumps({"error": "Task not found"})
         return self.tasks[task_key]
+
+    @gl.public.view
+    def get_balance(self, addr: str) -> str:
+        return self.balances.get(addr, "0")
 
     @gl.public.view
     def get_platform_stats(self) -> str:

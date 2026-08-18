@@ -67,6 +67,9 @@ AgentSLA Contract
 ├── Disputes
 │   ├── raise_dispute() — Challenge resolution (payable)
 │   └── resolve_dispute() — AI jury evaluation
+├── Balances (on-chain ledger)
+│   ├── get_balance() — View claimable GEN balance
+│   └── withdraw() — Claim credited GEN
 └── Platform Admin
     ├── set_platform_fee() — Owner adjusts fees (max 10%)
     └── withdraw_platform_fees() — Owner withdraws
@@ -81,15 +84,21 @@ AgentSLA Contract
 | Partial | 40-69 | Proportional | 0 |
 | Failed | <40 | 30% (kill fee) | -100 |
 
+When a task resolves, `resolve_task` credits GEN directly to three on-chain
+ledger balances: the agent receives its payout, the client receives any
+residual refund (unpaid portion of the stake), and the platform owner accrues
+the fee. Each party claims their balance with `withdraw()`.
+
 ## Tests
 
-32/32 tests passing — covering:
+36/36 tests passing — covering:
 - Agent registration and profile management
 - SLA task creation with escrow
 - Task acceptance with reputation checks
 - Evidence submission flow
 - LLM evaluation with mocked web/LLM
 - Graduated payout resolution
+- Balance crediting and withdraw
 - Dispute creation and resolution
 - Platform admin functions
 - Edge cases and error handling
