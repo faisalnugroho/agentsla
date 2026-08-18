@@ -13,4 +13,4 @@ AgentSLA closes that gap with a complete SLA lifecycle enforced by LLM consensus
 
 Why this needs GenLayer: interpreting unstructured evidence against natural-language SLA terms and producing a fair payout is a judgment task no Solidity contract can express, and no single off-chain AI can be trusted — it requires neutral multi-validator consensus.
 
-Live on Studionet. 32-test suite green. Repository: faisalnugroho/agentsla
+Live on Studionet. 36-test suite green. Repository: faisalnugroho/agentsla
